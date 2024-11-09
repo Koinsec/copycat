@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+
+import os
+import requests
+import argparse
+import urllib.parse
+from bs4 import BeautifulSoup
+from termcolor import cprint
+import pyfiglet
+
+def copy_website(website_url, protocol):
+    if protocol == "http":
+        response = requests.get(f"http://{website_url}")
+    elif protocol == "https":
+        response = requests.get(f"https://{website_url}")
+    else:
+        print("Unsupported protocol")
+        return
+    if response.status_code != 200:
+        print(f"Failed to retrieve website: {response.status_code}")
+        return
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    if not os.path.exists(website_url):
+        os.mkdir(website_url)
+    
+    with open(os.path.join(website_url, "index.html"), "w", encoding="utf-8") as f:
+        f.write(str(soup))
+
+    download_assets(website_url, soup, "link", "href", "css")
+    download_assets(website_url, soup, "script", "src", "js")
+    download_assets(website_url, soup, "img", "src", "images")
+    
+    print(f"Website and assets copied to {website_url}/")
+
+
+def download_assets(website_url, soup, tag, attribute, folder):
+    assets = soup.find_all(tag, attrs={attribute: True})
+    for asset in assets:
+        asset_url = asset.get(attribute)
+        if not asset_url:
+            continue
+
+        asset_url = urllib.parse.urljoin(f"http://{website_url}", asset_url)
+
+        if not asset_url or asset_url.endswith('/'):
+            continue
+        
+        asset_filename = os.path.join(website_url, folder, os.path.basename(asset_url))
+    
+        if not os.path.exists(os.path.join(website_url, folder)):
+            os.makedirs(os.path.join(website_url, folder))
+        
+        try:
+            print(f"Downloading {asset_url}...")
+            asset_response = requests.get(asset_url)
+            if asset_response.status_code == 200:
+                with open(asset_filename, "wb") as f:
+                    f.write(asset_response.content)
+                print(f"Saved {asset_filename}")
+            else:
+                print(f"Failed to download {asset_url}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading {asset_url}: {e}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog="CopyCat", description="Copy a website's source code including CSS, JS, and images")
+    parser.add_argument("--host", required=True, help="Domain name (e.g., example.com)")
+    parser.add_argument("--protocol", required=True, choices=["http", "https"], help="Port number (80 for HTTP, 443 for HTTPS)")
+
+    args = parser.parse_args()
+
+    print(pyfiglet.figlet_format("COPYCAT", font="digital"))
+
+    copy_website(args.host, args.protocol)
+
